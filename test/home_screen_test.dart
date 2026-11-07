@@ -87,7 +87,7 @@ void main() {
 
       await tester.pumpAndSettle();
 
-      expect(find.text('Connection Required'), findsOneWidget);
+      expect(find.text('API Key Required'), findsOneWidget);
       expect(find.text('Configure API Key'), findsOneWidget);
 
       await tester.tap(find.text('Configure API Key'));

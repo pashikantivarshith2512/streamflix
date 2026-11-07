@@ -67,6 +67,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   String _tmdbApiKey = AppConstants.defaultTmdbApiKey;
   late TmdbService _tmdbService;
   final WatchlistService _watchlistService = const WatchlistService();
+  bool _isInitializing = true;
 
   // Watchlist state synced with SharedPreferences
   final Set<int> _watchlistedMovieIds = {};
@@ -76,18 +77,26 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   void initState() {
     super.initState();
     _tmdbService = TmdbService(apiKey: _tmdbApiKey);
-    _loadSavedApiKey();
-    _loadWatchlist();
+    _initializeApp();
+  }
+
+  Future<void> _initializeApp() async {
+    await _loadSavedApiKey();
+    await _loadWatchlist();
+    if (mounted) {
+      setState(() {
+        _isInitializing = false;
+      });
+    }
   }
 
   Future<void> _loadSavedApiKey() async {
     final prefs = await SharedPreferences.getInstance();
     final savedKey = prefs.getString(AppConstants.prefApiKey);
     if (savedKey != null && savedKey.trim().isNotEmpty) {
-      setState(() {
-        _tmdbApiKey = savedKey.trim();
-        _tmdbService = TmdbService(apiKey: _tmdbApiKey);
-      });
+      final sanitized = TmdbService.sanitizeToken(savedKey);
+      _tmdbApiKey = sanitized;
+      _tmdbService = TmdbService(apiKey: sanitized);
     }
   }
 
@@ -104,12 +113,15 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   }
 
   Future<void> _saveApiKey(String newKey) async {
+    final sanitized = TmdbService.sanitizeToken(newKey);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(AppConstants.prefApiKey, newKey.trim());
-    setState(() {
-      _tmdbApiKey = newKey.trim();
-      _tmdbService = TmdbService(apiKey: _tmdbApiKey);
-    });
+    await prefs.setString(AppConstants.prefApiKey, sanitized);
+    if (mounted) {
+      setState(() {
+        _tmdbApiKey = sanitized;
+        _tmdbService = TmdbService(apiKey: sanitized);
+      });
+    }
   }
 
   bool _isMovieWatchlisted(Movie movie) {
@@ -167,81 +179,131 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   void _showApiKeyDialog() {
     final TextEditingController controller =
         TextEditingController(text: _tmdbApiKey);
+    bool isValidating = false;
 
     showDialog(
       context: context,
+      barrierDismissible: !isValidating,
       builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: AppConstants.surfaceColor,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          title: const Row(
-            children: [
-              Icon(Icons.vpn_key_outlined, color: AppConstants.primaryRed),
-              SizedBox(width: 8),
-              Text(
-                'TMDB API Configuration',
-                style: TextStyle(color: AppConstants.textWhite, fontSize: 18),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Enter your free TMDB API Key (v3 auth) below to fetch real movies, posters, and details from The Movie Database:',
-                style: TextStyle(color: AppConstants.textMuted, fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                style: const TextStyle(color: AppConstants.textWhite),
-                decoration: InputDecoration(
-                  labelText: 'TMDB API Key',
-                  labelStyle: const TextStyle(color: AppConstants.textMuted),
-                  hintText: 'e.g. 15d2ce6754406a61321f...',
-                  hintStyle: const TextStyle(color: Colors.white24),
-                  filled: true,
-                  fillColor: AppConstants.cardColor,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return AlertDialog(
+              backgroundColor: AppConstants.surfaceColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              title: const Row(
+                children: [
+                  Icon(Icons.vpn_key_outlined, color: AppConstants.primaryRed),
+                  SizedBox(width: 8),
+                  Text(
+                    'TMDB API Configuration',
+                    style: TextStyle(color: AppConstants.textWhite, fontSize: 18),
                   ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: AppConstants.primaryRed),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Paste your TMDB API Key (v3 32-char key) or API Read Access Token (v4 Bearer token) from themoviedb.org:',
+                    style: TextStyle(color: AppConstants.textMuted, fontSize: 13),
                   ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    enabled: !isValidating,
+                    style: const TextStyle(color: AppConstants.textWhite),
+                    decoration: InputDecoration(
+                      labelText: 'TMDB API Key or Access Token',
+                      labelStyle: const TextStyle(color: AppConstants.textMuted),
+                      hintText: 'e.g. 15d2ce67... or eyJhbGciOi...',
+                      hintStyle: const TextStyle(color: Colors.white24),
+                      filled: true,
+                      fillColor: AppConstants.cardColor,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: AppConstants.primaryRed),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Supports both v3 32-character keys and v4 Bearer access tokens. Credentials are saved locally in your browser.',
+                    style: TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isValidating ? null : () => Navigator.pop(ctx),
+                  child: const Text('Cancel', style: TextStyle(color: AppConstants.textMuted)),
                 ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Note: As a client-side Flutter Web application, API keys are stored in your browser local storage and communicated directly with api.themoviedb.org.',
-                style: TextStyle(color: Colors.white38, fontSize: 11),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel', style: TextStyle(color: AppConstants.textMuted)),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                _saveApiKey(controller.text);
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('TMDB API Key updated successfully!'),
-                    backgroundColor: Colors.green,
+                ElevatedButton(
+                  onPressed: isValidating
+                      ? null
+                      : () async {
+                          final input = controller.text.trim();
+                          if (input.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please enter an API Key or Token.'),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                            return;
+                          }
+
+                          setDialogState(() => isValidating = true);
+
+                          final isValid = await _tmdbService.validateCredentials(input);
+
+                          if (!dialogContext.mounted) return;
+
+                          if (isValid) {
+                            await _saveApiKey(input);
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('TMDB API Key verified and saved successfully!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          } else {
+                            setDialogState(() => isValidating = false);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('TMDB rejected this key. Please verify your v3 Key or v4 Read Access Token.'),
+                                  backgroundColor: Colors.redAccent,
+                                  duration: Duration(seconds: 4),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppConstants.primaryRed,
                   ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppConstants.primaryRed,
-              ),
-              child: const Text('Save Key', style: TextStyle(color: Colors.white)),
-            ),
-          ],
+                  child: isValidating
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Verify & Save', style: TextStyle(color: Colors.white)),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -249,6 +311,24 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isInitializing) {
+      return const Scaffold(
+        backgroundColor: AppConstants.backgroundColor,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: AppConstants.primaryRed),
+              SizedBox(height: 16),
+              Text(
+                'Loading StreamFlix...',
+                style: TextStyle(color: AppConstants.textMuted, fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     return Scaffold(
       body: Column(
         children: [

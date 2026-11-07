@@ -47,8 +47,37 @@ class TmdbService {
     http.Client? client,
   }) : _client = client ?? http.Client();
 
+  /// Sanitizes raw user input by stripping surrounding quotes, whitespace,
+  /// and any accidental "Bearer " or "api_key=" prefixes.
+  static String sanitizeToken(String raw) {
+    var cleaned = raw.trim();
+    if ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+        (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+      cleaned = cleaned.substring(1, cleaned.length - 1).trim();
+    }
+    if (cleaned.toLowerCase().startsWith('bearer ')) {
+      cleaned = cleaned.substring(7).trim();
+    } else if (cleaned.toLowerCase().startsWith('api_key=')) {
+      cleaned = cleaned.substring(8).trim();
+    }
+    return cleaned;
+  }
+
+  /// Reliably detects whether a credential is a TMDB v4 Read Access Token (JWT format)
+  /// or a standard TMDB v3 API Key (32-character hexadecimal).
+  static bool isV4Token(String token) {
+    final clean = sanitizeToken(token);
+    if (clean.startsWith('eyJ')) return true;
+    final dotCount = clean.split('.').length;
+    if (dotCount == 3) return true;
+    return false;
+  }
+
+  /// Sanitized active API key
+  String get cleanApiKey => sanitizeToken(apiKey);
+
   /// Check whether an API key has been supplied
-  bool get hasApiKey => apiKey.trim().isNotEmpty;
+  bool get hasApiKey => cleanApiKey.isNotEmpty;
 
   /// Helper to perform GET request and validate JSON response
   Future<dynamic> _get(String path, [Map<String, String>? queryParams]) async {
@@ -59,19 +88,27 @@ class TmdbService {
       );
     }
 
+    final cleanKey = cleanApiKey;
+    final bool useV4Bearer = isV4Token(cleanKey);
+
     final Map<String, String> params = {
-      'api_key': apiKey.trim(),
+      if (!useV4Bearer) 'api_key': cleanKey,
       ...?queryParams,
     };
 
+    final Map<String, String> headers = {
+      'Accept': 'application/json',
+      if (useV4Bearer) 'Authorization': 'Bearer $cleanKey',
+    };
+
     final Uri uri = Uri.parse('${AppConstants.tmdbBaseUrl}$path').replace(
-      queryParameters: params,
+      queryParameters: params.isNotEmpty ? params : null,
     );
 
     try {
       final response = await _client.get(
         uri,
-        headers: {'Accept': 'application/json'},
+        headers: headers,
       ).timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {
@@ -96,6 +133,41 @@ class TmdbService {
       throw TmdbApiException('Network error: ${e.message}');
     } on FormatException {
       throw const TmdbApiException('Failed to parse TMDB response as JSON.');
+    }
+  }
+
+  /// Tests an API key against TMDB's /authentication endpoint
+  /// to verify whether it is valid before saving.
+  Future<bool> validateCredentials([String? testKey]) async {
+    final candidate = sanitizeToken(testKey ?? apiKey);
+    if (candidate.isEmpty) return false;
+
+    final bool useV4 = isV4Token(candidate);
+    final Map<String, String> headers = {
+      'Accept': 'application/json',
+      if (useV4) 'Authorization': 'Bearer $candidate',
+    };
+    final Map<String, String> params = {
+      if (!useV4) 'api_key': candidate,
+    };
+
+    final Uri uri = Uri.parse('${AppConstants.tmdbBaseUrl}/authentication').replace(
+      queryParameters: params.isNotEmpty ? params : null,
+    );
+
+    try {
+      final response = await _client.get(
+        uri,
+        headers: headers,
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data is Map && data['success'] == true;
+      }
+      return false;
+    } catch (_) {
+      return false;
     }
   }
 

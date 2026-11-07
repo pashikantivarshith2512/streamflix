@@ -28,6 +28,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = true;
   String? _errorMessage;
+  String? _errorTitle;
 
   List<Movie> _trendingMovies = [];
   List<Movie> _popularMovies = [];
@@ -44,24 +45,29 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void didUpdateWidget(covariant HomeScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.tmdbService.apiKey != widget.tmdbService.apiKey) {
+    if (oldWidget.tmdbService.apiKey != widget.tmdbService.apiKey ||
+        (_errorMessage != null && widget.tmdbService.hasApiKey)) {
       _loadAllMovies();
     }
   }
 
   Future<void> _loadAllMovies() async {
     if (!widget.tmdbService.hasApiKey) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage =
-            'Please configure your TMDB API Key in the top navigation bar to stream real movie data.';
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorTitle = 'API Key Required';
+          _errorMessage =
+              'Please configure your TMDB API Key in the top navigation bar to stream real movie data.';
+        });
+      }
       return;
     }
 
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _errorTitle = null;
     });
 
     try {
@@ -96,11 +102,16 @@ class _HomeScreenState extends State<HomeScreen> {
           _upcomingMovies = upcoming;
           _featuredMovie = featured;
           _isLoading = false;
+          _errorMessage = null;
+          _errorTitle = null;
         });
       }
     } on TmdbApiException catch (e) {
       if (mounted) {
         setState(() {
+          _errorTitle = (e.statusCode == 401)
+              ? 'Authentication Failed'
+              : 'Connection Error';
           _errorMessage = e.message;
           _isLoading = false;
         });
@@ -108,6 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
+          _errorTitle = 'Connection Error';
           _errorMessage = 'An unexpected error occurred while loading movies: $e';
           _isLoading = false;
         });
@@ -458,6 +470,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Error & Configuration State
   Widget _buildErrorState(String message) {
+    final title = _errorTitle ?? 'Connection Required';
+
     return Center(
       child: Container(
         constraints: const BoxConstraints(maxWidth: 540),
@@ -484,9 +498,9 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            const Text(
-              'Connection Required',
-              style: TextStyle(
+            Text(
+              title,
+              style: const TextStyle(
                 color: AppConstants.textWhite,
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
@@ -523,7 +537,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 OutlinedButton.icon(
-                  onPressed: _loadAllMovies,
+                  onPressed: () {
+                    setState(() {
+                      _isLoading = true;
+                      _errorMessage = null;
+                      _errorTitle = null;
+                    });
+                    _loadAllMovies();
+                  },
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Colors.white38),
                     padding: const EdgeInsets.symmetric(
