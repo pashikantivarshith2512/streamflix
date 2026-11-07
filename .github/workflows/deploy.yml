@@ -1,0 +1,39 @@
+name: Deploy StreamFlix to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Permissions needed to deploy to GitHub Pages branch
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Run Automated Tests
+        run: flutter test
+
+      - name: Build Flutter Web Release
+        # Uses repository name dynamically for GitHub Pages base href
+        run: flutter build web --release --base-href "/${{ github.event.repository.name }}/"
+
+      - name: Deploy to GitHub Pages Branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/web
