@@ -27,7 +27,7 @@ class AppConstants {
   // TMDB API Key: Can be passed at compile-time via --dart-define=TMDB_API_KEY=...
   // or set dynamically in the application.
   static const String defaultTmdbApiKey =
-      String.fromEnvironment('TMDB_API_KEY', defaultValue: '');
+      String.fromEnvironment('TMDB_API_KEY', defaultValue: '3f035567eeff0222efd4c3246f82fa63');
 
   // SharedPreferences Keys
   static const String prefWatchlistKey = 'streamflix_watchlist';
