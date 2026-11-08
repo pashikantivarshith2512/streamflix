@@ -2,6 +2,7 @@
 
 A responsive, Netflix-inspired movie discovery web application built completely with **Flutter Web**, **Dart**, and **The Movie Database (TMDB) REST API**.
 
+Your site is live at https://pashikantivarshith2512.github.io/streamflix/
 ---
 
 ## 🌟 Key Features
