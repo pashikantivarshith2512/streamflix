@@ -64,7 +64,11 @@ class MainNavigationShell extends StatefulWidget {
 
 class _MainNavigationShellState extends State<MainNavigationShell> {
   NavTab _activeTab = NavTab.home;
-  String _tmdbApiKey = AppConstants.defaultTmdbApiKey;
+  // Fallback ensures the bundled key is always used even if compile-time
+  // --dart-define injection is skipped in some build environments.
+  String _tmdbApiKey = AppConstants.defaultTmdbApiKey.isNotEmpty
+      ? AppConstants.defaultTmdbApiKey
+      : '3f035567eeff0222efd4c3246f82fa63';
   late TmdbService _tmdbService;
   final WatchlistService _watchlistService = const WatchlistService();
   bool _isInitializing = true;

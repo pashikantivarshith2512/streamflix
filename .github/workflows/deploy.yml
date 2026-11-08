@@ -30,7 +30,8 @@ jobs:
 
       - name: Build Flutter Web Release
         # Uses repository name dynamically for GitHub Pages base href
-        run: flutter build web --release --base-href "/${{ github.event.repository.name }}/"
+        # TMDB_API_KEY is injected at compile-time so the app works without user input
+        run: flutter build web --release --base-href "/${{ github.event.repository.name }}/" --dart-define=TMDB_API_KEY=3f035567eeff0222efd4c3246f82fa63
 
       - name: Deploy to GitHub Pages Branch
         uses: peaceiris/actions-gh-pages@v4
